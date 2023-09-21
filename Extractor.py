@@ -4,9 +4,12 @@ import json
 import requests
 import zipfile
 from io import BytesIO
+from bs4 import BeautifulSoup
+import re
+from lxml import html
 
-# Function to download screenshots and create a ZIP file
-def download_screenshots(url):
+# Function to create an in-memory ZIP file containing screenshots and Output.json
+def create_in_memory_zip(url):
     try:
         # Fetch the web page content
         response = requests.get(url)
@@ -58,14 +61,16 @@ def download_screenshots(url):
                         image_file.write(img_response.content)
                     counter += 1
 
-            # Create a ZIP file containing the screenshots and Output.json
-            with zipfile.ZipFile('Screenshots.zip', 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Create an in-memory ZIP file
+            in_memory_zip = BytesIO()
+
+            with zipfile.ZipFile(in_memory_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 zipf.write('Output.json')
                 for root, _, files in os.walk('Screenshots'):
                     for file in files:
                         zipf.write(os.path.join(root, file))
 
-            return True
+            return in_memory_zip.getvalue()
         else:
             return False
     except Exception as e:
@@ -81,13 +86,11 @@ if st.button("Extract"):
     if not url:
         st.warning("Please enter a valid URL.")
     else:
-        result = download_screenshots(url)
-        if result:
-            st.success("Screenshots downloaded and zipped successfully!")
+        zip_data = create_in_memory_zip(url)
+        if zip_data:
+            st.success("Screenshots zipped successfully!")
 
             # Provide download link for the ZIP file
-            with open('Screenshots.zip', 'rb') as f:
-                zip_data = f.read()
             st.download_button(
                 label="Download Screenshots ZIP",
                 data=zip_data,
