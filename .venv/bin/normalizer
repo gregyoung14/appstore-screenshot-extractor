@@ -1,4 +1,4 @@
-#!/Users/greg/appstore-screenshot-extractor/.venv/bin/python3.11
+#!/Users/greg/stream-demo/.venv/bin/python3.11
 # -*- coding: utf-8 -*-
 import re
 import sys
