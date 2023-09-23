@@ -1,20 +1,27 @@
 import streamlit as st
-import os
-import json
 import requests
-import zipfile
+from PIL import Image
 from io import BytesIO
 from bs4 import BeautifulSoup
 import re
 from lxml import html
+from zipfile import ZipFile  # Import ZipFile from zipfile module
 
-# Function to create an in-memory ZIP file containing screenshots and Output.json
-def create_in_memory_zip(url):
+# Function to extract HTML content from a URL
+def extract_html_content(url):
     try:
-        # Fetch the web page content
+        # Send an HTTP GET request to fetch the HTML content
         response = requests.get(url)
-        html_content = response.content
+        if response.status_code == 200:
+            return response.content
+        else:
+            return None
+    except Exception as e:
+        return None
 
+# Function to extract image URLs from HTML content
+def extract_and_filter_image_urls(html_content):
+    try:
         # Parse the HTML content using lxml
         parsed_html = html.fromstring(html_content)
 
@@ -39,63 +46,70 @@ def create_in_memory_zip(url):
                 urls = re.findall(r'https://\S+\.png', srcset['srcset'])
                 image_urls.extend(urls)
 
-            # Create a folder to save the downloaded screenshots
-            if not os.path.exists('Screenshots'):
-                os.makedirs('Screenshots')
+            # Filter for image URLs containing '600'
+            image_urls = [url for url in image_urls if '600' in url]
 
-            # Initialize a counter for incrementing filenames
-            counter = 1
-
-            # Loop through each URL and download the images
-            for img_url in image_urls:
-                # Generate a unique filename for each image based on the counter
-                filename = os.path.join('Screenshots', f"{counter:04d}_{os.path.basename(img_url)}")
-
-                # Send an HTTP GET request to download the image
-                img_response = requests.get(img_url)
-
-                # Check if the request was successful (status code 200)
-                if img_response.status_code == 200:
-                    # Save the image to the local folder
-                    with open(filename, 'wb') as image_file:
-                        image_file.write(img_response.content)
-                    counter += 1
-
-            # Create an in-memory ZIP file
-            in_memory_zip = BytesIO()
-
-            with zipfile.ZipFile(in_memory_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                zipf.write('Output.json')
-                for root, _, files in os.walk('Screenshots'):
-                    for file in files:
-                        zipf.write(os.path.join(root, file))
-
-            return in_memory_zip.getvalue()
+            return image_urls
         else:
-            return False
+            return []
     except Exception as e:
-        return str(e)
+        return []
 
 # Streamlit app
-st.title("Screenshot Extractor")
+st.title("Image Downloader")
 
 # User input for URL
 url = st.text_input("Enter the URL:")
 
-if st.button("Extract"):
+if st.button("Download"):
     if not url:
         st.warning("Please enter a valid URL.")
     else:
-        zip_data = create_in_memory_zip(url)
-        if zip_data:
-            st.success("Screenshots zipped successfully!")
+        try:
+            # Extract HTML content from the provided URL
+            html_content = extract_html_content(url)
 
-            # Provide download link for the ZIP file
-            st.download_button(
-                label="Download Screenshots ZIP",
-                data=zip_data,
-                file_name="Screenshots.zip",
-                key="download_button",
-            )
-        else:
-            st.error("Failed to extract screenshots. Please check the URL.")
+            if html_content:
+                # Extract and filter image URLs from the HTML content
+                image_urls = extract_and_filter_image_urls(html_content)
+
+                if image_urls:
+                    st.success("Image URLs extracted and filtered successfully!")
+
+                    # Download button to download all images
+                    all_images_data = []
+
+                    for i, img_url in enumerate(image_urls, start=1):
+                        img_response = requests.get(img_url)
+                        if img_response.status_code == 200:
+                            img = Image.open(BytesIO(img_response.content))
+
+                            # Display small previews of the images
+                            st.image(img, caption=f"Image {i}", width=200)
+
+                            # Append image data for downloading all images
+                            all_images_data.append((f"image_{i}.jpg", img_response.content))
+                        else:
+                            st.warning(f"Failed to download image {i} from {img_url}.")
+
+                    # Provide a single download button to download all images
+                    if st.button("Download All Images"):
+                        with st.spinner("Downloading..."):
+                            zip_data = BytesIO()
+                            with ZipFile(zip_data, 'w') as zipf:
+                                for file_name, img_data in all_images_data:
+                                    zipf.writestr(file_name, img_data)
+                            st.write(zip_data)
+                            st.download_button(
+                                label="Download All Images",
+                                data=zip_data.getvalue(),
+                                file_name="images.zip",
+                                key="download_all_button",
+                            )
+
+                else:
+                    st.warning("No image URLs containing '600' found in the HTML.")
+            else:
+                st.error("Failed to fetch HTML content. Please check the URL.")
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
